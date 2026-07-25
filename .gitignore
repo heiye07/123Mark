@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 构建中间产物
+build/
+dist/
+legacy/
+*.pkg
+base_library.zip
+
+# 二进制发布物（仅作为 GitHub Release 资产分发，不进 git 历史）
+*.exe
+
+# 编辑器/系统
+.DS_Store
+Thumbs.db

@@ -1,0 +1,3 @@
+APP_NAME = "123Mark"
+APP_VERSION = "1.0.0"
+APP_DISPLAY_NAME = f"{APP_NAME} · 投标图片水印"
