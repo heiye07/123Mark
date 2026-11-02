@@ -3,7 +3,7 @@ setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
 
-set "APP_VERSION=1.0.0"
+set "APP_VERSION=1.0.1"
 set "PYTHON_EXE=.venv\Scripts\python.exe"
 
 echo ========================================

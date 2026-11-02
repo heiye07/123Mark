@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 from config import get_user_data_dir
@@ -37,11 +38,11 @@ class FavoritesManager:
             return False
 
     def get_all(self):
-        return [dict(item) for item in self.favorites]
+        return deepcopy(self.favorites)
 
     def get(self, index):
         if 0 <= index < len(self.favorites):
-            return dict(self.favorites[index])
+            return deepcopy(self.favorites[index])
         return None
 
     def add(self, item):
@@ -52,7 +53,13 @@ class FavoritesManager:
             "name": str(item.get("name", text[:20])).strip() or text[:20],
             "text": text,
         }
-        self.favorites = [favorite for favorite in self.favorites if favorite.get("text") != text]
+        if isinstance(item.get("settings"), dict):
+            normalized["settings"] = deepcopy(item["settings"])
+        self.favorites = [
+            favorite for favorite in self.favorites
+            if (favorite.get("text"), favorite.get("settings"))
+            != (text, normalized.get("settings"))
+        ]
         self.favorites.insert(0, normalized)
         self.favorites = self.favorites[: self.max_items]
         return self._save()

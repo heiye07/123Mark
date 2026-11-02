@@ -82,6 +82,63 @@ class WatermarkApp:
         self.count_text = tk.StringVar(value="尚未导入图片")
         self.status_text = tk.StringVar(value="就绪")
 
+    # 收藏和启动恢复使用同一份参数，避免遗漏样式字段。
+    WATERMARK_VARIABLES = (
+        "watermark_text", "selected_color", "selected_font_size",
+        "selected_position", "opacity_var", "rotation_var", "margin_var",
+        "tile_var", "tile_rows_var", "tile_cols_var",
+        "watermark_mode", "watermark_image_path", "watermark_image_size_var",
+    )
+
+    def _capture_watermark_settings(self):
+        settings = {}
+        for name in self.WATERMARK_VARIABLES:
+            try:
+                settings[name] = getattr(self, name).get()
+            except tk.TclError:
+                # 数字输入框暂时为空时跳过该字段。
+                pass
+        return settings
+
+    def _apply_watermark_settings(self, settings):
+        if not isinstance(settings, dict):
+            return
+        choices = {
+            "selected_color": PRESET_COLORS,
+            "selected_position": POSITION_PRESETS,
+            "watermark_mode": ("text", "image"),
+            "watermark_image_size_var": ("25%", "33%", "50%", "75%", "100%", "150%", "200%"),
+        }
+        ranges = {
+            "selected_font_size": (1, 1024), "opacity_var": (1, 100),
+            "rotation_var": (-180, 180), "margin_var": (0, 500),
+            "tile_rows_var": (1, 20), "tile_cols_var": (1, 20),
+        }
+        for name in self.WATERMARK_VARIABLES:
+            if name not in settings:
+                continue
+            value = settings[name]
+            if name in choices and (not isinstance(value, str) or value not in choices[name]):
+                continue
+            if name in ranges:
+                try:
+                    value = max(ranges[name][0], min(ranges[name][1], int(value)))
+                except (ValueError, TypeError, OverflowError):
+                    continue
+            elif name == "tile_var":
+                if not isinstance(value, bool):
+                    continue
+            elif not isinstance(value, str):
+                continue
+            getattr(self, name).set(value)
+        self.rainbow_var.set(self.selected_color.get() == "彩虹")
+        self._highlight_color(self.selected_color.get())
+        self._highlight_position()
+        self._update_opacity_label()
+        self._update_rotation_label()
+        self._on_mode_change()
+        self._on_tile_toggle()
+
     def _configure_window(self):
         self.root.title(f"{APP_DISPLAY_NAME}  v{APP_VERSION}")
         geometry = self.config.get("window_geometry", "1180x760")
@@ -611,8 +668,8 @@ class WatermarkApp:
     def _on_mode_change(self):
         if self.watermark_mode.get() == "text":
             self.image_settings.pack_forget()
-            self.text_settings.pack(fill=tk.X, pady=(0, 17), before=self.color_section)
             self.color_section.pack(fill=tk.X, pady=(0, 17), before=self.style_section)
+            self.text_settings.pack(fill=tk.X, pady=(0, 17), before=self.color_section)
             self.font_row.pack(fill=tk.X, pady=(0, 8), before=self.opacity_row)
         else:
             self.text_settings.pack_forget()
@@ -741,6 +798,7 @@ class WatermarkApp:
         favorite = self.favorites.get(self.fav_combo.current())
         if favorite:
             self.watermark_text.set(favorite.get("text", ""))
+            self._apply_watermark_settings(favorite.get("settings", {}))
             self._schedule_preview()
 
     def _add_favorite(self):
@@ -748,6 +806,16 @@ class WatermarkApp:
         if not text:
             messagebox.showwarning("无法收藏", "请先输入水印文本。", parent=self.root)
             return
+        try:
+            self._get_watermark_params()
+        except ValueError as error:
+            messagebox.showwarning("无法收藏", str(error), parent=self.root)
+            return
+        settings = self._capture_watermark_settings()
+        settings["watermark_mode"] = "text"
+        settings["watermark_text"] = text
+        settings.pop("watermark_image_path", None)
+        settings.pop("watermark_image_size_var", None)
         if self.favorites.is_full() and not messagebox.askyesno(
             "收藏已满",
             "收藏最多保留 10 项。继续后会移除最旧的一项。",
@@ -770,7 +838,9 @@ class WatermarkApp:
         ttk.Label(body, text=f"内容：{text[:42]}{'…' if len(text) > 42 else ''}", style="Muted.TLabel").pack(anchor="w")
 
         def confirm():
-            self.favorites.add({"name": name_var.get(), "text": text})
+            if not self.favorites.add({"name": name_var.get(), "text": text, "settings": settings}):
+                messagebox.showerror("保存失败", "无法写入收藏文件，请检查用户目录权限。", parent=dialog)
+                return
             self._refresh_favorite_combo()
             dialog.destroy()
             self.status_text.set("已保存到常用水印")
@@ -1070,6 +1140,7 @@ class WatermarkApp:
         self.watermark_mode.set(self.config.get("last_watermark_mode", "text"))
         self.quality_value.configure(text=str(round(self.output_quality_var.get())))
         self._refresh_output_history()
+        self._apply_watermark_settings(self.config.get("watermark_settings", {}))
 
     def _save_config(self):
         geometry = self.root.geometry().split("+", 1)[0]
@@ -1080,6 +1151,7 @@ class WatermarkApp:
                 "output_quality": round(self.output_quality_var.get()),
                 "window_geometry": geometry,
                 "last_watermark_mode": self.watermark_mode.get(),
+                "watermark_settings": self._capture_watermark_settings(),
             }
         )
 
@@ -1131,6 +1203,7 @@ class WatermarkApp:
             self._full_exit()
 
     def _minimize_to_tray(self):
+        self._save_config()
         try:
             import pystray
         except ImportError:
